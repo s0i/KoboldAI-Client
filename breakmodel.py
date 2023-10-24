@@ -291,17 +291,18 @@ def dispatch_model_ex(
         main_device = [d for d in device_map.values() if d not in offload_devices][0]
 
     cpu_modules = [name for name, device in device_map.items() if device == "cpu"] if main_device != "cpu" else []
-    if state_dict is None and len(cpu_modules) > 0:
+    if state_dict is None and cpu_modules:
         state_dict = extract_submodules_state_dict(model.state_dict(), cpu_modules)
 
     disk_modules = [name for name, device in device_map.items() if device == "disk"]
-    if offload_dir is None and len(disk_modules) > 0:
+    if offload_dir is None and disk_modules:
         raise ValueError(
             "We need an `offload_dir` to dispatch this model according to this `device_map`, the following submodules "
             f"need to be offloaded: {', '.join(disk_modules)}."
         )
-    if len(disk_modules) > 0 and (
-        not os.path.isdir(offload_dir) or not os.path.isfile(os.path.join(offload_dir, "index.json"))
+    if disk_modules and (
+        not os.path.isdir(offload_dir)
+        or not os.path.isfile(os.path.join(offload_dir, "index.json"))
     ):
         disk_state_dict = extract_submodules_state_dict(model.state_dict(), disk_modules)
         offload_state_dict(offload_dir, disk_state_dict)
@@ -310,7 +311,7 @@ def dispatch_model_ex(
         name: main_device if device in offload_devices else device for name, device in device_map.items()
     }
     offload = {name: device in offload_devices for name, device in device_map.items()}
-    save_folder = offload_dir if len(disk_modules) > 0 else None
+    save_folder = offload_dir if disk_modules else None
     if state_dict is not None or save_folder is not None:
         weights_map = OffloadedWeightsLoader(state_dict=state_dict, save_folder=save_folder)
     else:

@@ -20,10 +20,7 @@ def getsavepath(dir, title, types):
         defaultextension="*.*"
         )
     root.destroy()
-    if(path != "" and path != None):
-        return path.name
-    else:
-        return None
+    return path.name if path not in ["", None] else None
 
 #==================================================================#
 #  Generic Method for prompting for file path
@@ -39,10 +36,7 @@ def getloadpath(dir, title, types):
         filetypes = types
         )
     root.destroy()
-    if(path != "" and path != None):
-        return path
-    else:
-        return None
+    return path if path not in ["", None] else None
 
 #==================================================================#
 #  Generic Method for prompting for directory path
@@ -57,16 +51,13 @@ def getdirpath(dir, title):
         title=title
         )
     root.destroy()
-    if(path != "" and path != None):
-        return path
-    else:
-        return None
+    return path if path not in ["", None] else None
 
 #==================================================================#
 #  Returns the path (as a string) to the given story by its name
 #==================================================================#
 def storypath(name):
-    return path.join("stories", name + ".json")
+    return path.join("stories", f"{name}.json")
 
 #==================================================================#
 #  Returns the path (as a string) to the given soft prompt by its filename
@@ -87,16 +78,14 @@ def getstoryfiles():
     list = []
     for file in listdir("stories"):
         if file.endswith(".json") and not file.endswith(".v2.json"):
-            ob = {}
-            ob["name"] = file.replace(".json", "")
-            f = open("stories/"+file, "r")
-            try:
-                js = json.load(f)
-            except:
-                print(f"Browser loading error: {file} is malformed or not a JSON file.")
-                f.close()
-                continue
-            f.close()
+            ob = {"name": file.replace(".json", "")}
+            with open(f"stories/{file}", "r") as f:
+                try:
+                    js = json.load(f)
+                except:
+                    print(f"Browser loading error: {file} is malformed or not a JSON file.")
+                    f.close()
+                    continue
             try:
                 ob["actions"] = len(js["actions"])
             except TypeError:
@@ -113,7 +102,7 @@ def checksp(filename: str, model_dimension: int) -> Tuple[Union[zipfile.ZipFile,
     if 'np' not in globals():
         import numpy as np
     try:
-        z = zipfile.ZipFile("softprompts/"+filename)
+        z = zipfile.ZipFile(f"softprompts/{filename}")
         with z.open('tensor.npy') as f:
             # Read only the header of the npy file, for efficiency reasons
             version: Tuple[int, int] = np.lib.format.read_magic(f)
@@ -181,8 +170,7 @@ def getusfiles(long_desc=False):
     os.makedirs("userscripts", exist_ok=True)
     for file in listdir("userscripts"):
         if file.endswith(".lua"):
-            ob = {}
-            ob["filename"] = file
+            ob = {"filename": file}
             description = []
             multiline = False
             with open(uspath(file)) as f:

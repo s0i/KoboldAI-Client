@@ -19,16 +19,10 @@ class KoboldStoryRegister(collections.OrderedDict):
         return self.popitem()[1]
     
     def get_first_key(self) -> int:
-        if len(self) == 0:
-            return -1
-        else:
-            return next(iter(self))
+        return -1 if len(self) == 0 else next(iter(self))
 
     def get_last_key(self) -> int:
-        if len(self) == 0:
-            return -1
-        else:
-            return next(reversed(self))
+        return -1 if len(self) == 0 else next(reversed(self))
 
     def __getitem__(self, k: int) -> str:
         return super().__getitem__(k)
