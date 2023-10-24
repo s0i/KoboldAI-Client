@@ -116,34 +116,30 @@ def addsentencespacing(txt, vars):
     if(len(txt) == 0 or len(txt) != len(txt.lstrip())):
         return txt
     # Get last character of last action
-    if(len(vars.actions) > 0):
-        if(len(vars.actions[vars.actions.get_last_key()]) > 0):
-            action = vars.actions[vars.actions.get_last_key()]
-            lastchar = action[-1] if len(action) else ""
-        else:
+    if (len(vars.actions) > 0):
+        if len(vars.actions[vars.actions.get_last_key()]) <= 0:
             # Last action is blank, this should never happen, but
             # since it did let's bail out.
             return txt
+        action = vars.actions[vars.actions.get_last_key()]
     else:
         action = vars.prompt
-        lastchar = action[-1] if len(action) else ""
-    if(lastchar != " "):
-        txt = " " + txt
+    lastchar = action[-1] if len(action) else ""
+    if (lastchar != " "):
+        txt = f" {txt}"
     return txt
 	
 def singlelineprocessing(txt, vars):
     txt = vars.regex_sl.sub('', txt)
-    if(len(vars.actions) > 0):
-        if(len(vars.actions[vars.actions.get_last_key()]) > 0):
-            action = vars.actions[vars.actions.get_last_key()]
-            lastchar = action[-1] if len(action) else ""
-        else:
+    if (len(vars.actions) > 0):
+        if len(vars.actions[vars.actions.get_last_key()]) <= 0:
             # Last action is blank, this should never happen, but
             # since it did let's bail out.
             return txt
+        action = vars.actions[vars.actions.get_last_key()]
     else:
         action = vars.prompt
-        lastchar = action[-1] if len(action) else ""
+    lastchar = action[-1] if len(action) else ""
     if(lastchar != "\n"):
         txt = txt + "\n"
     return txt
@@ -160,16 +156,12 @@ def cleanfilename(filename):
 #  Newline substitution for fairseq models
 #==================================================================#
 def encodenewlines(txt):
-    if(vars.newlinemode == "s"):
-        return txt.replace('\n', "</s>")
-    return txt
+    return txt.replace('\n', "</s>") if (vars.newlinemode == "s") else txt
 
 def decodenewlines(txt):
     if(vars.newlinemode == "s"):
         return txt.replace("</s>", '\n')
-    if(vars.newlinemode == "ns"):
-        return txt.replace("</s>", '')
-    return txt
+    return txt.replace("</s>", '') if (vars.newlinemode == "ns") else txt
 
 #==================================================================#
 #  Returns number of layers given an HF model config
@@ -183,10 +175,11 @@ def num_layers(config):
 from flask_socketio import emit
             
 def _download_with_aria2(aria2_config: str, total_length: int, directory: str = ".", user_agent=None, force_download=False, use_auth_token=None):
+
     class Send_to_socketio(object):
         def write(self, bar):
             bar = bar.replace("\r", "").replace("\n", "")
-            
+
             if bar != "":
                 try:
                     print('\r' + bar, end='')
@@ -199,7 +192,7 @@ def _download_with_aria2(aria2_config: str, total_length: int, directory: str = 
                     pass
         def flush(self):
             pass
-    
+
     import transformers
     aria2_port = 6799 if vars is None else vars.aria2_port
     lengths = {}
@@ -224,7 +217,14 @@ def _download_with_aria2(aria2_config: str, total_length: int, directory: str = 
                     done = True
                     break
                 if bar is None:
-                    bar = tqdm(total=total_length, desc=f"[aria2] Downloading model", unit="B", unit_scale=True, unit_divisor=1000, file=Send_to_socketio())
+                    bar = tqdm(
+                        total=total_length,
+                        desc="[aria2] Downloading model",
+                        unit="B",
+                        unit_scale=True,
+                        unit_divisor=1000,
+                        file=Send_to_socketio(),
+                    )
                 visited = set()
                 for x in r:
                     filename = x["files"][0]["path"]
@@ -276,6 +276,7 @@ def _transformers22_aria2_hook(pretrained_model_name_or_path: str, force_downloa
         except ValueError:
             return False
         return True
+
     while True:  # Try to get the huggingface.co URL of the model's pytorch_model.bin or pytorch_model.bin.index.json file
         try:
             filename = transformers.modeling_utils.WEIGHTS_INDEX_NAME if sharded else transformers.modeling_utils.WEIGHTS_NAME
@@ -300,7 +301,7 @@ def _transformers22_aria2_hook(pretrained_model_name_or_path: str, force_downloa
         urls = [u for u, n in zip(urls, filenames) if not is_cached(n)]
         if not urls:
             return
-    
+
     blob_paths = []
 
     # This section is a modified version of hf_hub_download from huggingface_hub
@@ -390,8 +391,7 @@ def _transformers22_aria2_hook(pretrained_model_name_or_path: str, force_downloa
                 commit_hash = _revision
             else:
                 ref_path = os.path.join(storage_folder, "refs", _revision)
-                with open(ref_path) as f:
-                    commit_hash = f.read()
+                commit_hash = Path(ref_path).read_text()
             pointer_path = os.path.join(
                 storage_folder, "snapshots", commit_hash, relative_filename
             )
@@ -443,18 +443,25 @@ def _transformers22_aria2_hook(pretrained_model_name_or_path: str, force_downloa
 
     for n in filenames:
         prefix, suffix = n.rsplit(os.sep, 1)
-        path = os.path.join(prefix, "kai-tempfile." + suffix + ".aria2")
+        path = os.path.join(prefix, f"kai-tempfile.{suffix}.aria2")
         if os.path.exists(path):
             os.remove(path)
-        path = os.path.join(prefix, "kai-tempfile." + suffix)
+        path = os.path.join(prefix, f"kai-tempfile.{suffix}")
         if os.path.exists(path):
             os.remove(path)
     total_length = sum(int(h["Content-Length"]) for h in headers)
-    aria2_config = "\n".join(f"{u}\n  out={os.path.join(prefix, 'kai-tempfile.' + suffix)}" for u, n in zip(urls, filenames) for prefix, suffix in [n.rsplit(os.sep, 1)]).encode()
+    aria2_config = "\n".join(
+        f"{u}\n  out={os.path.join(prefix, f'kai-tempfile.{suffix}')}"
+        for u, n in zip(urls, filenames)
+        for prefix, suffix in [n.rsplit(os.sep, 1)]
+    ).encode()
     _download_with_aria2(aria2_config, total_length, use_auth_token=token if use_auth_token else None, user_agent=user_agent, force_download=force_download)
     for u, n in zip(urls, filenames):
         prefix, suffix = n.rsplit(os.sep, 1)
-        os.rename(os.path.join(prefix, "kai-tempfile." + suffix), os.path.join(prefix, suffix))
+        os.rename(
+            os.path.join(prefix, f"kai-tempfile.{suffix}"),
+            os.path.join(prefix, suffix),
+        )
 
 def aria2_hook(pretrained_model_name_or_path: str, force_download=False, cache_dir=None, proxies=None, resume_download=False, local_files_only=False, use_auth_token=None, user_agent=None, revision=None, **kwargs):
     import transformers
@@ -465,7 +472,14 @@ def aria2_hook(pretrained_model_name_or_path: str, force_download=False, cache_d
         return
     if local_files_only:  # If local_files_only is true, we obviously don't need to download anything
         return
-    if os.path.isdir(pretrained_model_name_or_path) or os.path.isfile(pretrained_model_name_or_path) or os.path.isfile(pretrained_model_name_or_path + ".index") or transformers.modeling_utils.is_remote_url(pretrained_model_name_or_path):
+    if (
+        os.path.isdir(pretrained_model_name_or_path)
+        or os.path.isfile(pretrained_model_name_or_path)
+        or os.path.isfile(f"{pretrained_model_name_or_path}.index")
+        or transformers.modeling_utils.is_remote_url(
+            pretrained_model_name_or_path
+        )
+    ):
         return
     if proxies:
         print("WARNING:  KoboldAI does not support using aria2 to download models from huggingface.co through a proxy.  Disabling aria2 download mode.")
@@ -490,6 +504,7 @@ def aria2_hook(pretrained_model_name_or_path: str, force_download=False, cache_d
         except ValueError:
             return False
         return True
+
     while True:  # Try to get the huggingface.co URL of the model's pytorch_model.bin or pytorch_model.bin.index.json file
         try:
             filename = transformers.modeling_utils.WEIGHTS_INDEX_NAME if sharded else transformers.modeling_utils.WEIGHTS_NAME
@@ -518,14 +533,14 @@ def aria2_hook(pretrained_model_name_or_path: str, force_download=False, cache_d
     headers = [requests.head(u, headers=headers, allow_redirects=True, proxies=proxies, timeout=10).headers for u in urls]
     filenames = [hashlib.sha256(u.encode("utf-8")).hexdigest() + "." + hashlib.sha256(t.encode("utf-8")).hexdigest() for u, t in zip(urls, etags)]
     for n in filenames:
-        path = os.path.join(_cache_dir, "kai-tempfile." + n + ".aria2")
+        path = os.path.join(_cache_dir, f"kai-tempfile.{n}.aria2")
         if os.path.exists(path):
             os.remove(path)
-        path = os.path.join(_cache_dir, "kai-tempfile." + n)
+        path = os.path.join(_cache_dir, f"kai-tempfile.{n}")
         if os.path.exists(path):
             os.remove(path)
         if force_download:
-            path = os.path.join(_cache_dir, n + ".json")
+            path = os.path.join(_cache_dir, f"{n}.json")
             if os.path.exists(path):
                 os.remove(path)
             path = os.path.join(_cache_dir, n)
@@ -535,8 +550,11 @@ def aria2_hook(pretrained_model_name_or_path: str, force_download=False, cache_d
     aria2_config = "\n".join(f"{u}\n  out=kai-tempfile.{n}" for u, n in zip(urls, filenames)).encode()
     _download_with_aria2(aria2_config, total_length, directory=_cache_dir, use_auth_token=token if use_auth_token else None, user_agent=user_agent, force_download=force_download)
     for u, t, n in zip(urls, etags, filenames):
-        os.rename(os.path.join(_cache_dir, "kai-tempfile." + n), os.path.join(_cache_dir, n))
-        with open(os.path.join(_cache_dir, n + ".json"), "w") as f:
+        os.rename(
+            os.path.join(_cache_dir, f"kai-tempfile.{n}"),
+            os.path.join(_cache_dir, n),
+        )
+        with open(os.path.join(_cache_dir, f"{n}.json"), "w") as f:
             json.dump({"url": u, "etag": t}, f)
 
 #==================================================================#
@@ -572,7 +590,8 @@ def get_layers_module_names(model: PreTrainedModel) -> List[str]:
             if c[0].isnumeric() and any(c[1].__class__.__name__.endswith(suffix) for suffix in ("Block", "Layer")):
                 names.append(name)
             else:
-                recurse(c[1], head=name + ".")
+                recurse(c[1], head=f"{name}.")
+
     recurse(model)
     return names
 
@@ -585,10 +604,8 @@ def get_input_embeddings_module_name(model: PreTrainedModel) -> str:
     def recurse(module, head=""):
         for c in module.named_children():
             name = head + c[0]
-            if c[1] is embeddings:
-                return name
-            else:
-                return recurse(c[1], head=name + ".")
+            return name if c[1] is embeddings else recurse(c[1], head=f"{name}.")
+
     return recurse(model)
 
 #==================================================================#
@@ -606,6 +623,7 @@ def get_missing_module_names(model: PreTrainedModel, names: List[str]) -> List[s
             if next(c[1].named_children(), None) is None:
                 missing_names.append(name)
             else:
-                recurse(c[1], head=name + ".")
+                recurse(c[1], head=f"{name}.")
+
     recurse(model)
     return missing_names

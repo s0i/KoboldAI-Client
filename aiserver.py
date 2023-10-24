@@ -522,9 +522,21 @@ def api_catch_out_of_memory_errors(f):
                     if any(s in line.lower() for s in ("out of memory", "not enough memory")) and line.count(":"):
                         line = line.split(":", 1)[1]
                         line = re.sub(r"\[.+?\] +data\.", "", line).strip()
-                        raise KoboldOutOfMemoryError("KoboldAI ran out of memory: " + line, type="out_of_memory.gpu.cuda" if "cuda out of memory" in line.lower() else "out_of_memory.gpu.hip" if "hip out of memory" in line.lower() else "out_of_memory.tpu.hbm" if "memory space hbm" in line.lower() else "out_of_memory.cpu.default_memory_allocator" if "defaultmemoryallocator" in line.lower() else "out_of_memory.unknown.unknown")
+                        raise KoboldOutOfMemoryError(
+                            f"KoboldAI ran out of memory: {line}",
+                            type="out_of_memory.gpu.cuda"
+                            if "cuda out of memory" in line.lower()
+                            else "out_of_memory.gpu.hip"
+                            if "hip out of memory" in line.lower()
+                            else "out_of_memory.tpu.hbm"
+                            if "memory space hbm" in line.lower()
+                            else "out_of_memory.cpu.default_memory_allocator"
+                            if "defaultmemoryallocator" in line.lower()
+                            else "out_of_memory.unknown.unknown",
+                        )
                 raise KoboldOutOfMemoryError(type="out_of_memory.unknown.unknown")
             raise e
+
     return decorated
 
 def api_schema_wrap(f):
@@ -553,7 +565,7 @@ def api_schema_wrap(f):
 def handler(e):
     if request.path != "/api" and not request.path.startswith("/api/"):
         return e
-    resp = jsonify(detail={"msg": str(e), "type": "generic.error_" + str(e.code)})
+    resp = jsonify(detail={"msg": str(e), "type": f"generic.error_{str(e.code)}"})
     if e.code == 405 and e.valid_methods is not None:
         resp.headers["Allow"] = ", ".join(e.valid_methods)
     return resp, e.code
@@ -603,11 +615,26 @@ class KoboldAPISpec(APISpec):
         api_versions.sort(key=lambda x: [int(e) for e in x.split(".")])
         super().__init__(*args, title=title, openapi_version=openapi_version, version=version, plugins=plugins, servers=[{"url": self._prefixes[0]}], **kwargs)
         for prefix in self._prefixes:
-            app.route(prefix, endpoint="~KoboldAPISpec~" + prefix)(lambda: redirect(request.path + "/docs/"))
-            app.route(prefix + "/", endpoint="~KoboldAPISpec~" + prefix + "/")(lambda: redirect("docs/"))
-            app.route(prefix + "/docs", endpoint="~KoboldAPISpec~" + prefix + "/docs")(lambda: redirect("docs/"))
-            app.route(prefix + "/docs/", endpoint="~KoboldAPISpec~" + prefix + "/docs/")(lambda: render_template("swagger-ui.html", url=self._prefixes[0] + "/openapi.json"))
-            app.route(prefix + "/openapi.json", endpoint="~KoboldAPISpec~" + prefix + "/openapi.json")(lambda: jsonify(self.to_dict()))
+            app.route(prefix, endpoint=f"~KoboldAPISpec~{prefix}")(
+                lambda: redirect(f"{request.path}/docs/")
+            )
+            app.route(f"{prefix}/", endpoint=f"~KoboldAPISpec~{prefix}/")(
+                lambda: redirect("docs/")
+            )
+            app.route(f"{prefix}/docs", endpoint=f"~KoboldAPISpec~{prefix}/docs")(
+                lambda: redirect("docs/")
+            )
+            app.route(
+                f"{prefix}/docs/", endpoint=f"~KoboldAPISpec~{prefix}/docs/"
+            )(
+                lambda: render_template(
+                    "swagger-ui.html", url=f"{self._prefixes[0]}/openapi.json"
+                )
+            )
+            app.route(
+                f"{prefix}/openapi.json",
+                endpoint=f"~KoboldAPISpec~{prefix}/openapi.json",
+            )(lambda: jsonify(self.to_dict()))
 
     def route(self, rule: str, methods=["GET"], **kwargs):
         __F = TypeVar("__F", bound=Callable[..., Any])
@@ -671,8 +698,8 @@ def get_config_filename(model_name = None):
     elif vars.configname != '':
         return(f"settings/{vars.configname.replace('/', '_')}.settings")
     else:
-        logger.warning(f"Empty configfile name sent back. Defaulting to ReadOnly")
-        return(f"settings/ReadOnly.settings")
+        logger.warning("Empty configfile name sent back. Defaulting to ReadOnly")
+        return "settings/ReadOnly.settings"
 #==================================================================#
 # Function to get model selection at startup
 #==================================================================#
@@ -684,10 +711,9 @@ def sendModelSelection(menu="mainmenu", folder="./models"):
             breadcrumbs = []
         menu_list = [[folder, menu, "", False] for folder in paths]
         menu_list.append(["Return to Main Menu", "mainmenu", "", True])
-        if os.path.abspath("{}/models".format(os.getcwd())) == os.path.abspath(folder):
-            showdelete=True
-        else:
-            showdelete=False
+        showdelete = os.path.abspath(
+            f"{os.getcwd()}/models"
+        ) == os.path.abspath(folder)
         emit('from_server', {'cmd': 'show_model_menu', 'data': menu_list, 'menu': menu, 'breadcrumbs': breadcrumbs, "showdelete": showdelete}, broadcast=True)
     else:
         emit('from_server', {'cmd': 'show_model_menu', 'data': model_menu[menu], 'menu': menu, 'breadcrumbs': [], "showdelete": False}, broadcast=True)
@@ -695,58 +721,71 @@ def sendModelSelection(menu="mainmenu", folder="./models"):
 def get_folder_path_info(base):
     if base == 'This PC':
         breadcrumbs = [['This PC', 'This PC']]
-        paths = [["{}:\\".format(chr(i)), "{}:\\".format(chr(i))] for i in range(65, 91) if os.path.exists("{}:".format(chr(i)))]
+        paths = [
+            [f"{chr(i)}:\\", f"{chr(i)}:\\"]
+            for i in range(65, 91)
+            if os.path.exists(f"{chr(i)}:")
+        ]
     else:
         path = os.path.abspath(base)
         if path[-1] == "\\":
             path = path[:-1]
-        breadcrumbs = []
-        for i in range(len(path.replace("/", "\\").split("\\"))):
-            breadcrumbs.append(["\\".join(path.replace("/", "\\").split("\\")[:i+1]),
-                                 path.replace("/", "\\").split("\\")[i]])
+        breadcrumbs = [
+            [
+                "\\".join(path.replace("/", "\\").split("\\")[: i + 1]),
+                path.replace("/", "\\").split("\\")[i],
+            ]
+            for i in range(len(path.replace("/", "\\").split("\\")))
+        ]
         if len(breadcrumbs) == 1:
-            breadcrumbs = [["{}:\\".format(chr(i)), "{}:\\".format(chr(i))] for i in range(65, 91) if os.path.exists("{}:".format(chr(i)))]
-        else:
-            if len([["{}:\\".format(chr(i)), "{}:\\".format(chr(i))] for i in range(65, 91) if os.path.exists("{}:".format(chr(i)))]) > 0:
-                breadcrumbs.insert(0, ['This PC', 'This PC'])
-        paths = []
+            breadcrumbs = [
+                [f"{chr(i)}:\\", f"{chr(i)}:\\"]
+                for i in range(65, 91)
+                if os.path.exists(f"{chr(i)}:")
+            ]
+        elif [
+            [f"{chr(i)}:\\", f"{chr(i)}:\\"]
+            for i in range(65, 91)
+            if os.path.exists(f"{chr(i)}:")
+        ]:
+            breadcrumbs.insert(0, ['This PC', 'This PC'])
         base_path = os.path.abspath(base)
-        for item in os.listdir(base_path):
-            if os.path.isdir(os.path.join(base_path, item)):
-                paths.append([os.path.join(base_path, item), item])
+        paths = [
+            [os.path.join(base_path, item), item]
+            for item in os.listdir(base_path)
+            if os.path.isdir(os.path.join(base_path, item))
+        ]
     # Paths/breadcrumbs is a list of lists, where the first element in the sublist is the full path and the second is the folder name
     return (paths, breadcrumbs)
 
 
 def getModelSelection(modellist):
     print("    #    Model\t\t\t\t\t\tVRAM\n    ========================================================")
-    i = 1
-    for m in modellist:
+    for i, m in enumerate(modellist, start=1):
         print("    {0} - {1}\t\t\t{2}".format("{:<2}".format(i), m[0].ljust(25), m[2]))
-        i += 1
     print(" ");
     modelsel = 0
     vars.model = ''
-    while(vars.model == ''):
+    while not vars.model:
         modelsel = input("Model #> ")
         if(modelsel.isnumeric() and int(modelsel) > 0 and int(modelsel) <= len(modellist)):
             vars.model = modellist[int(modelsel)-1][1]
         else:
             print("{0}Please enter a valid selection.{1}".format(colors.RED, colors.END))
-    
+
     # Model Lists
     try:
         getModelSelection(eval(vars.model))
     except Exception as e:
         if(vars.model == "Return"):
             getModelSelection(mainmenu)
-                
+
         # If custom model was selected, get the filesystem location and store it
-        if(vars.model == "NeoCustom" or vars.model == "GPT2Custom"):
+        if vars.model in ["NeoCustom", "GPT2Custom"]:
             print("{0}Please choose the folder where pytorch_model.bin is located:{1}\n".format(colors.CYAN, colors.END))
-            modpath = fileops.getdirpath(getcwd() + "/models", "Select Model Folder")
-        
-            if(modpath):
+            if modpath := fileops.getdirpath(
+                f"{getcwd()}/models", "Select Model Folder"
+            ):
                 # Save directory to vars
                 vars.custmodpth = modpath
             else:
@@ -774,12 +813,19 @@ def check_if_dir_is_model(path):
 def getmodelname():
     if(vars.online_model != ''):
        return(f"{vars.model}/{vars.online_model}")
-    if(vars.model in ("NeoCustom", "GPT2Custom", "TPUMeshTransformerGPTJ", "TPUMeshTransformerGPTNeoX")):
-        modelname = os.path.basename(os.path.normpath(vars.custmodpth))
-        return modelname
-    else:
-        modelname = vars.model
-        return modelname
+    return (
+        os.path.basename(os.path.normpath(vars.custmodpth))
+        if (
+            vars.model
+            in (
+                "NeoCustom",
+                "GPT2Custom",
+                "TPUMeshTransformerGPTJ",
+                "TPUMeshTransformerGPTNeoX",
+            )
+        )
+        else vars.model
+    )
 
 #==================================================================#
 # Get hidden size from model
@@ -798,15 +844,19 @@ def device_list(n_layers, primary=None, selected=None):
     print(f"{colors.YELLOW}       DEVICE ID  |  LAYERS  |  DEVICE NAME{colors.END}")
     for i in range(device_count):
         name = torch.cuda.get_device_name(i)
-        if(len(name) > 47):
-            name = "..." + name[-44:]
+        if (len(name) > 47):
+            name = f"...{name[-44:]}"
         row_color = colors.END
         sep_color = colors.YELLOW
-        print(f"{row_color}{colors.YELLOW + '->' + row_color if i == selected else '  '} {'(primary)' if i == primary else ' '*9} {i:3}  {sep_color}|{row_color}     {gpu_blocks[i]:3}  {sep_color}|{row_color}  {name}{colors.END}")
+        print(
+            f"{row_color}{f'{colors.YELLOW}->{row_color}' if i == selected else '  '} {'(primary)' if i == primary else ' ' * 9} {i:3}  {sep_color}|{row_color}     {gpu_blocks[i]:3}  {sep_color}|{row_color}  {name}{colors.END}"
+        )
     row_color = colors.END
     sep_color = colors.YELLOW
-    if(utils.HAS_ACCELERATE):
-        print(f"{row_color}{colors.YELLOW + '->' + row_color if -1 == selected else '  '} {' '*9} N/A  {sep_color}|{row_color}     {breakmodel.disk_blocks:3}  {sep_color}|{row_color}  (Disk cache){colors.END}")
+    if utils.HAS_ACCELERATE:
+        print(
+            f"{row_color}{f'{colors.YELLOW}->{row_color}' if selected == -1 else '  '} {' ' * 9} N/A  {sep_color}|{row_color}     {breakmodel.disk_blocks:3}  {sep_color}|{row_color}  (Disk cache){colors.END}"
+        )
     print(f"{row_color}   {' '*9} N/A  {sep_color}|{row_color}     {n_layers:3}  {sep_color}|{row_color}  (CPU){colors.END}")
 
 def device_config(config):
@@ -1005,14 +1055,14 @@ def loadmodelsettings():
     except Exception as e:
         try:
             try:
-                js   = json.load(open(vars.custmodpth + "/config.json", "r"))
+                js = json.load(open(f"{vars.custmodpth}/config.json", "r"))
             except Exception as e:
-                js   = json.load(open(vars.custmodpth.replace('/', '_') + "/config.json", "r"))            
+                js   = json.load(open(vars.custmodpth.replace('/', '_') + "/config.json", "r"))
         except Exception as e:
             js   = {}
     if vars.model_type == "xglm" or js.get("compat", "j") == "fairseq_lm":
         vars.newlinemode = "s"  # Default to </s> newline mode if using XGLM
-    if vars.model_type == "opt" or vars.model_type == "bloom":
+    if vars.model_type in ["opt", "bloom"]:
         vars.newlinemode = "ns"  # Handle </s> but don't convert newlines if using Fairseq models that have newlines trained in them
     vars.modelconfig = js
     if("badwordsids" in js):
@@ -1064,53 +1114,46 @@ def loadmodelsettings():
 #==================================================================#
 def savesettings():
      # Build json to write
-    js = {}
-    js["apikey"]      = vars.apikey
-    js["andepth"]     = vars.andepth
-    js["sampler_order"] = vars.sampler_order
-    js["temp"]        = vars.temp
-    js["top_p"]       = vars.top_p
-    js["top_k"]       = vars.top_k
-    js["tfs"]         = vars.tfs
-    js["typical"]     = vars.typical
-    js["top_a"]       = vars.top_a
-    js["rep_pen"]     = vars.rep_pen
-    js["rep_pen_slope"] = vars.rep_pen_slope
-    js["rep_pen_range"] = vars.rep_pen_range
-    js["genamt"]      = vars.genamt
-    js["max_length"]  = vars.max_length
-    js["ikgen"]       = vars.ikgen
-    js["formatoptns"] = vars.formatoptns
-    js["numseqs"]     = vars.numseqs
-    js["widepth"]     = vars.widepth
-    js["useprompt"]   = vars.useprompt
-    js["adventure"]   = vars.adventure
-    js["chatmode"]    = vars.chatmode
-    js["chatname"]    = vars.chatname
-    js["dynamicscan"] = vars.dynamicscan
-    js["nopromptgen"] = vars.nopromptgen
-    js["rngpersist"]  = vars.rngpersist
-    js["nogenmod"]    = vars.nogenmod
-    js["fulldeterminism"] = vars.full_determinism
-    js["autosave"]    = vars.autosave
-    js["welcome"]     = vars.welcome
-    js["output_streaming"] = vars.output_streaming
-    js["show_probs"] = vars.show_probs
-    js["show_budget"] = vars.show_budget
-
-    if(vars.seed_specified):
-        js["seed"]    = vars.seed
-    else:
-        js["seed"]    = None
-
-    js["newlinemode"] = vars.newlinemode
-
-    js["antemplate"]  = vars.setauthornotetemplate
-
-    js["userscripts"] = vars.userscripts
-    js["corescript"]  = vars.corescript
-    js["softprompt"]  = vars.spfilename
-
+    js = {
+        "apikey": vars.apikey,
+        "andepth": vars.andepth,
+        "sampler_order": vars.sampler_order,
+        "temp": vars.temp,
+        "top_p": vars.top_p,
+        "top_k": vars.top_k,
+        "tfs": vars.tfs,
+        "typical": vars.typical,
+        "top_a": vars.top_a,
+        "rep_pen": vars.rep_pen,
+        "rep_pen_slope": vars.rep_pen_slope,
+        "rep_pen_range": vars.rep_pen_range,
+        "genamt": vars.genamt,
+        "max_length": vars.max_length,
+        "ikgen": vars.ikgen,
+        "formatoptns": vars.formatoptns,
+        "numseqs": vars.numseqs,
+        "widepth": vars.widepth,
+        "useprompt": vars.useprompt,
+        "adventure": vars.adventure,
+        "chatmode": vars.chatmode,
+        "chatname": vars.chatname,
+        "dynamicscan": vars.dynamicscan,
+        "nopromptgen": vars.nopromptgen,
+        "rngpersist": vars.rngpersist,
+        "nogenmod": vars.nogenmod,
+        "fulldeterminism": vars.full_determinism,
+        "autosave": vars.autosave,
+        "welcome": vars.welcome,
+        "output_streaming": vars.output_streaming,
+        "show_probs": vars.show_probs,
+        "show_budget": vars.show_budget,
+        "seed": vars.seed if vars.seed_specified else None,
+        "newlinemode": vars.newlinemode,
+        "antemplate": vars.setauthornotetemplate,
+        "userscripts": vars.userscripts,
+        "corescript": vars.corescript,
+        "softprompt": vars.spfilename,
+    }
     # Write it
     if not os.path.exists('settings'):
         os.mkdir('settings')
@@ -1133,26 +1176,19 @@ def settingschanged():
 #==================================================================#
 
 def loadsettings():
-    if(path.exists("defaults/" + getmodelname().replace('/', '_') + ".settings")):
-        # Read file contents into JSON object
-        file = open("defaults/" + getmodelname().replace('/', '_') + ".settings", "r")
-        js   = json.load(file)
-        
-        processsettings(js)
-        file.close()
-    if(path.exists(get_config_filename())):
-        # Read file contents into JSON object
-        file = open(get_config_filename(), "r")
-        js   = json.load(file)
-        
-        processsettings(js)
-        file.close()
+    if (path.exists("defaults/" + getmodelname().replace('/', '_') + ".settings")):
+        with open("defaults/" + getmodelname().replace('/', '_') + ".settings", "r") as file:
+            js   = json.load(file)
+
+            processsettings(js)
+    if (path.exists(get_config_filename())):
+        with open(get_config_filename(), "r") as file:
+            js   = json.load(file)
+
+            processsettings(js)
         
 def processsettings(js):
-# Copy file contents to vars
-    if("apikey" in js):
-        # If the model is the HORDE, then previously saved API key in settings
-        # Will always override a new key set.
+    if ("apikey" in js):
         if vars.model != "CLUSTER" or vars.apikey == '':
             vars.apikey = js["apikey"]
     if("andepth" in js):
@@ -1222,13 +1258,10 @@ def processsettings(js):
         vars.show_probs = js["show_probs"]
     if("show_budget" in js):
         vars.show_budget = js["show_budget"]
-    
-    if("seed" in js):
+
+    if ("seed" in js):
         vars.seed = js["seed"]
-        if(vars.seed is not None):
-            vars.seed_specified = True
-        else:
-            vars.seed_specified = False
+        vars.seed_specified = vars.seed is not None
     else:
         vars.seed_specified = False
 
@@ -1236,7 +1269,7 @@ def processsettings(js):
         vars.setauthornotetemplate = js["antemplate"]
         if(not vars.gamestarted):
             vars.authornotetemplate = vars.setauthornotetemplate
-    
+
     if("userscripts" in js):
         vars.userscripts = []
         for userscript in js["userscripts"]:
@@ -1385,19 +1418,17 @@ def general_startup(override_args=None):
         args = parser.parse_args(shlex.split(os.environ["KOBOLDAI_ARGS"]))
     else:
         args = parser.parse_args()
-    
+
     utils.args = args
 
     set_logger_verbosity(args.verbosity)
     quiesce_logger(args.quiesce)
     if args.customsettings:
-        f = open (args.customsettings)
-        importedsettings = json.load(f)
-        for items in importedsettings:
-            if importedsettings[items] is not None:
-                setattr(args, items, importedsettings[items])            
-        f.close()
-    
+        with open (args.customsettings) as f:
+            importedsettings = json.load(f)
+            for items in importedsettings:
+                if importedsettings[items] is not None:
+                    setattr(args, items, importedsettings[items])
     if args.no_ui:
         def new_emit(*args, **kwargs):
             return
@@ -1446,23 +1477,23 @@ def general_startup(override_args=None):
     vars.smanrename = vars.host == args.override_rename
 
     vars.aria2_port = args.aria2_port or 6799
-    
+
     #Now let's look to see if we are going to force a load of a model from a user selected folder
-    if(vars.model == "selectfolder"):
+    if (vars.model == "selectfolder"):
         print("{0}Please choose the folder where pytorch_model.bin is located:{1}\n".format(colors.CYAN, colors.END))
-        modpath = fileops.getdirpath(getcwd() + "/models", "Select Model Folder")
-    
+        modpath = fileops.getdirpath(f"{getcwd()}/models", "Select Model Folder")
+
         if(modpath):
             # Save directory to vars
             vars.model = "NeoCustom"
             vars.custmodpth = modpath
     elif args.model:
-        logger.message(f"Welcome to KoboldAI!")
+        logger.message("Welcome to KoboldAI!")
         logger.message(f"You have selected the following Model: {vars.model}")
         if args.path:
             logger.message(f"You have selected the following path for your Model: {args.path}")
             vars.custmodpth = args.path;
-            vars.colaburl = args.path + "/request"; # Lets just use the same parameter to keep it simple
+            vars.colaburl = f"{args.path}/request"; # Lets just use the same parameter to keep it simple
 #==================================================================#
 # Load Model
 #==================================================================# 
@@ -1483,12 +1514,14 @@ def tpumtjgetsofttokens():
             tpu_mtj_backend.params.get("d_embed", tpu_mtj_backend.params["d_model"]),
         )
         vars.sp = tpu_mtj_backend.shard_xmap(tensor)
-    soft_tokens = np.arange(
-        tpu_mtj_backend.params["n_vocab"] + tpu_mtj_backend.params["n_vocab_padding"],
-        tpu_mtj_backend.params["n_vocab"] + tpu_mtj_backend.params["n_vocab_padding"] + vars.sp_length,
-        dtype=np.uint32
+    return np.arange(
+        tpu_mtj_backend.params["n_vocab"]
+        + tpu_mtj_backend.params["n_vocab_padding"],
+        tpu_mtj_backend.params["n_vocab"]
+        + tpu_mtj_backend.params["n_vocab_padding"]
+        + vars.sp_length,
+        dtype=np.uint32,
     )
-    return soft_tokens
  
 def get_model_info(model, directory=""):
     # if the model is in the api list

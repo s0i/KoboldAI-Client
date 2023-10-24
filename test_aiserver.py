@@ -31,7 +31,7 @@ def get_model_menu(model):
 def generate_story_data(client_data):
     (client, app, socketio_client) = client_data
     socketio_client.emit('message',{'cmd': 'submit', 'allowabort': False, 'actionmode': 0, 'chatname': None, 'data': ''})
-    
+
     #wait until the game state turns back to start
     state = 'wait'
     new_text = None
@@ -46,10 +46,10 @@ def generate_story_data(client_data):
             print(response)
             if response['cmd'] == 'setgamestate':
                 state = response['data']
-            elif response['cmd'] == 'updatechunk' or response['cmd'] == 'genseqs':
+            elif response['cmd'] in ['updatechunk', 'genseqs']:
                 new_text = response['data']
         time.sleep(0.1)
-    
+
     assert new_text is not None
 
 def test_basic_connection(client_data):
@@ -59,20 +59,17 @@ def test_basic_connection(client_data):
 
 def test_load_story_from_web_ui(client_data):
     (client, app, socketio_client) = client_data
-    
+
     #List out the stories and make sure we have the sample story
     socketio_client.emit('message',{'cmd': 'loadlistrequest', 'data': ''})
     response = socketio_client.get_received()[0]['args'][0]['data']
-    found_sample_story = False
-    for story in response:
-        if story['name'] == 'sample_story':
-            found_sample_story = True
+    found_sample_story = any(story['name'] == 'sample_story' for story in response)
     assert found_sample_story
-    
+
     #Click on the sample story, then click load
     socketio_client.emit('message',{'cmd': 'loadselect', 'data': 'sample_story'})
     socketio_client.emit('message',{'cmd': 'loadrequest', 'data': ''})
-    
+
     #Wait until we get the data back from the load
     loaded_story = False
     timeout = time.time() + 60*2
@@ -90,7 +87,7 @@ def test_load_story_from_web_ui(client_data):
                 story_text = response['data']
                 break
     assert loaded_story
-    
+
     #Verify that it's the right story data
     assert story_text == '<chunk n="0" id="n0" tabindex="-1">Niko the kobold stalked carefully down the alley, his small scaly figure obscured by a dusky cloak that fluttered lightly in the cold winter breeze. Holding up his tail to keep it from dragging in the dirty snow that covered the cobblestone, he waited patiently for the butcher to turn his attention from his stall so that he could pilfer his next meal: a tender-looking</chunk><chunk n="1" id="n1" tabindex="-1"> chicken. He crouched just slightly as he neared the stall to ensure that no one was watching, not that anyone would be dumb enough to hassle a small kobold. What else was there for a lowly kobold to</chunk><chunk n="2" id="n2" tabindex="-1"> do in a city? All that Niko needed to know was</chunk><chunk n="3" id="n3" tabindex="-1"> where to find the chicken and then how to make off with it.<br/><br/>A soft thud caused Niko to quickly lift his head. Standing behind the stall where the butcher had been cutting his chicken,</chunk>'  
 
@@ -157,21 +154,21 @@ def test_load_GooseAI_from_web_ui(client_data):
 @pytest.mark.parametrize("model, expected_load_options", test_models)
 def test_load_model_from_command_line(client_data, model, expected_load_options):
     (client, app, socketio_client) = client_data
-    
+
     #Clear out any old messages
     response = socketio_client.get_received()
-    
+
     (menu, menu_line, model_line) = get_model_menu(model)
-    
-    aiserver.general_startup("--model {}".format(model))
-    
+
+    aiserver.general_startup(f"--model {model}")
+
     aiserver.load_model(initial_load=True)
-    
+
     #check the model info to see if it's loaded
     socketio_client.emit('message',{'cmd': 'show_model', 'data': ''})
     response = socketio_client.get_received()[0]['args'][0]
     assert response == {'cmd': 'show_model_name', 'data': model}
-    
+
     generate_story_data(client_data)
 
 def test_back_redo(client_data):

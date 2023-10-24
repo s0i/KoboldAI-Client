@@ -37,10 +37,10 @@ class AdvancedRepetitionPenaltyLogitsProcessor(LogitsWarper):
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
         self.penalty_range = int(self.penalty_range)
-        clipped_penalty_range = min(input_ids.shape[-1], self.penalty_range)
-
         if self.penalty != 1.0:
             if self.penalty_range > 0:
+                clipped_penalty_range = min(input_ids.shape[-1], self.penalty_range)
+
                 if clipped_penalty_range < input_ids.shape[1]:
                     input_ids = input_ids[..., -clipped_penalty_range:]
 
@@ -60,7 +60,7 @@ class AdvancedRepetitionPenaltyLogitsProcessor(LogitsWarper):
 class TailFreeLogitsWarper(LogitsWarper):
 
     def __init__(self, tfs: float, filter_value: float = -float("Inf"), min_tokens_to_keep: int = 1):
-        tfs = float(tfs)
+        tfs = tfs
         if tfs < 0 or tfs > 1.0:
             raise ValueError(f"`tfs` has to be a float >= 0 and <= 1, but is {tfs}")
         self.tfs = tfs
@@ -106,7 +106,7 @@ class TypicalLogitsWarper(LogitsWarper):
     '''
 
     def __init__(self, typical: float, filter_value: float = -float("Inf"), min_tokens_to_keep: int = 1):
-        typical = float(typical)
+        typical = typical
         if typical < 0 or typical > 1.0:
             raise ValueError(f"`typical` has to be a float >= 0 and <= 1, but is {typical}")
         self.typical = typical
@@ -152,7 +152,7 @@ class TypicalLogitsWarper(LogitsWarper):
 
 class TopALogitsWarper(LogitsWarper):
     def __init__(self, top_a: float, filter_value: float = -float("Inf"), min_tokens_to_keep: int = 1):
-        top_a = float(top_a)
+        top_a = top_a
         if top_a < 0 or top_a > 1.0:
             raise ValueError(f"`top_a` has to be a float >= 0 and <= 1, but is {top_a}")
         self.top_a = top_a

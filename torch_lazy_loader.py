@@ -207,10 +207,9 @@ def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, miss
         if key in state_dict:
             input_param = state_dict[key]
             if not torch.overrides.is_tensor_like(input_param):
-                error_msgs.append('While copying the parameter named "{}", '
-                                    'expected torch.Tensor or Tensor-like object from checkpoint but '
-                                    'received {}'
-                                    .format(key, type(input_param)))
+                error_msgs.append(
+                    f'While copying the parameter named "{key}", expected torch.Tensor or Tensor-like object from checkpoint but received {type(input_param)}'
+                )
                 continue
 
             # This is used to avoid copying uninitialized parameters into
@@ -223,9 +222,9 @@ def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, miss
 
             if not is_param_lazy and input_param.shape != param.shape:
                 # local shape should match the one in checkpoint
-                error_msgs.append('size mismatch for {}: copying a param with shape {} from checkpoint, '
-                                    'the shape in current model is {}.'
-                                    .format(key, input_param.shape, param.shape))
+                error_msgs.append(
+                    f'size mismatch for {key}: copying a param with shape {input_param.shape} from checkpoint, the shape in current model is {param.shape}.'
+                )
                 continue
             try:
                 with torch.no_grad():
@@ -236,11 +235,9 @@ def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, miss
                     if name in persistent_buffers:  # This line is new
                         self._buffers[name] = new_param  # This line is new
             except Exception as ex:
-                error_msgs.append('While copying the parameter named "{}", '
-                                    'whose dimensions in the model are {} and '
-                                    'whose dimensions in the checkpoint are {}, '
-                                    'an exception occurred : {}.'
-                                    .format(key, param.size(), input_param.size(), ex.args))
+                error_msgs.append(
+                    f'While copying the parameter named "{key}", whose dimensions in the model are {param.size()} and whose dimensions in the checkpoint are {input_param.size()}, an exception occurred : {ex.args}.'
+                )
         elif strict:
             missing_keys.append(key)
 

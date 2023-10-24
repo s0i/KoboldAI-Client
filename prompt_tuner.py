@@ -198,25 +198,26 @@ def device_list(n_layers, primary=None, selected=None):
     print(f"{colors.YELLOW}       DEVICE ID  |  LAYERS  |  DEVICE NAME{colors.END}")
     for i in range(device_count):
         name = torch.cuda.get_device_name(i)
-        if(len(name) > 47):
-            name = "..." + name[-44:]
+        if (len(name) > 47):
+            name = f"...{name[-44:]}"
         row_color = colors.END
         sep_color = colors.YELLOW
-        print(f"{row_color}{colors.YELLOW + '->' + row_color if i == selected else '  '} {'(primary)' if i == primary else ' '*9} {i:3}  {sep_color}|{row_color}     {gpu_blocks[i]:3}  {sep_color}|{row_color}  {name}{colors.END}")
+        print(
+            f"{row_color}{f'{colors.YELLOW}->{row_color}' if i == selected else '  '} {'(primary)' if i == primary else ' ' * 9} {i:3}  {sep_color}|{row_color}     {gpu_blocks[i]:3}  {sep_color}|{row_color}  {name}{colors.END}"
+        )
     row_color = colors.END
     sep_color = colors.YELLOW
-    print(f"{row_color}{colors.YELLOW + '->' + row_color if -1 == selected else '  '} {' '*9} N/A  {sep_color}|{row_color}     {breakmodel.disk_blocks:3}  {sep_color}|{row_color}  (Disk cache){colors.END}")
+    print(
+        f"{row_color}{f'{colors.YELLOW}->{row_color}' if selected == -1 else '  '} {' ' * 9} N/A  {sep_color}|{row_color}     {breakmodel.disk_blocks:3}  {sep_color}|{row_color}  (Disk cache){colors.END}"
+    )
     print(f"{row_color}   {' '*9} N/A  {sep_color}|{row_color}     {n_layers:3}  {sep_color}|{row_color}  (CPU){colors.END}")
 
 
 def move_model_to_devices(model, usegpu, gpu_device):
     global generator
 
-    if(not use_breakmodel):
-        if(usegpu):
-            model = model.half().to(gpu_device)
-        else:
-            model = model.to('cpu').float()
+    if (not use_breakmodel):
+        model = model.half().to(gpu_device) if usegpu else model.to('cpu').float()
         generator = model.generate
         return
 
@@ -274,9 +275,17 @@ class UniversalPromptTuningMixin:
             model.transformer = _WTEDummy(model)
         elif not hasattr(model.transformer, "wte"):
             assert isinstance(model.transformer, type)
-            model.transformer.__class__ = type("_UniversalPromptTuning" + model.transformer.__class__.__name__, (_WTEMixin, model.transformer.__class__), {})
+            model.transformer.__class__ = type(
+                f"_UniversalPromptTuning{model.transformer.__class__.__name__}",
+                (_WTEMixin, model.transformer.__class__),
+                {},
+            )
 
-        model.__class__ = type("_UniversalPromptTuning" + model.__class__.__name__, (UniversalPromptTuningMixin, model.__class__), {})
+        model.__class__ = type(
+            f"_UniversalPromptTuning{model.__class__.__name__}",
+            (UniversalPromptTuningMixin, model.__class__),
+            {},
+        )
 
         for param in model.parameters():
             param.requires_grad = False
@@ -474,18 +483,24 @@ class TrainerBase(abc.ABC):
     
     def _get_model_config(self) -> transformers.configuration_utils.PretrainedConfig:
         REVISION = None
-        if(os.path.isdir(self.data.ckpt_path)):
-            model_config     = AutoConfig.from_pretrained(self.data.ckpt_path, revision=REVISION, cache_dir="cache")
-        elif(os.path.isdir("models/{}".format(self.data.ckpt_path.replace('/', '_')))):
-            model_config     = AutoConfig.from_pretrained("models/{}".format(self.data.ckpt_path.replace('/', '_')), revision=REVISION, cache_dir="cache")
+        if (os.path.isdir(self.data.ckpt_path)):
+            return AutoConfig.from_pretrained(
+                self.data.ckpt_path, revision=REVISION, cache_dir="cache"
+            )
+        elif os.path.isdir(f"models/{self.data.ckpt_path.replace('/', '_')}"):
+            return AutoConfig.from_pretrained(
+                f"models/{self.data.ckpt_path.replace('/', '_')}",
+                revision=REVISION,
+                cache_dir="cache",
+            )
         else:
-            model_config     = AutoConfig.from_pretrained(self.data.ckpt_path, revision=REVISION, cache_dir="cache")
-        return model_config
+            return AutoConfig.from_pretrained(
+                self.data.ckpt_path, revision=REVISION, cache_dir="cache"
+            )
 
     def get_hf_checkpoint_metadata(self) -> bool:
-        params = {}
         model_config = self._get_model_config()
-        params["tokenizer_id"] = self.data.ckpt_path
+        params = {"tokenizer_id": self.data.ckpt_path}
         tokenizer = get_tokenizer(self.data.ckpt_path)
         params["newlinemode"] = params.get(
             "newlinemode", "s" if model_config.model_type == "xglm" else "n"
@@ -617,9 +632,11 @@ class TrainerBase(abc.ABC):
         print("Batch size:", batch_size)
         print(termcolor.colored("Tokenizing your dataset...\n", "magenta"))
 
-        if not isinstance(dataset_path, str):
-            files = [dataset_path]
-        elif os.path.isfile(dataset_path):
+        if (
+            not isinstance(dataset_path, str)
+            or isinstance(dataset_path, str)
+            and os.path.isfile(dataset_path)
+        ):
             files = [dataset_path]
         else:
             files = sorted(
@@ -631,10 +648,7 @@ class TrainerBase(abc.ABC):
         tokens = []
         eos = tokenizer.decode(self.data.params["eos_token"])
         for path in files:
-            if isinstance(path, str):
-                f = open(path)
-            else:
-                f = path
+            f = open(path) if isinstance(path, str) else path
             try:
                 text = f.read()
                 if use_ftfy:
@@ -651,8 +665,7 @@ class TrainerBase(abc.ABC):
                 "Your dataset is too small!  The number of tokens has to be greater than the batch size.  Try increasing the epochs.",
                 code=13,
             )
-        tail = len(tokens) % (batch_size + 1)
-        if tail:
+        if tail := len(tokens) % (batch_size + 1):
             print(
                 f"We're removing the last {tail} tokens from your dataset to make the length a multiple of {batch_size+1}."
             )
@@ -666,17 +679,14 @@ class TrainerBase(abc.ABC):
             tokens = np.concatenate(
                 (
                     tokens,
-                    *(rng.permutation(tokens, axis=0) for i in range(_epochs - 1)),
+                    *(rng.permutation(tokens, axis=0) for _ in range(_epochs - 1)),
                 ),
                 axis=0,
             )
         tokens = tokens[: math.ceil(epochs * sequences_per_epoch)]
         print(f"Total sequences in your dataset: {tokens.shape[0]}")
 
-        if isinstance(output_file, str):
-            f = open(output_file, "w")
-        else:
-            f = output_file
+        f = open(output_file, "w") if isinstance(output_file, str) else output_file
         try:
             np.save(output_file, tokens)
         finally:
@@ -776,10 +786,8 @@ class TrainerBase(abc.ABC):
                     # Delete all of the files in the disk cache folder without deleting the folder itself to allow people to create symbolic links for this folder
                     # (the folder doesn't contain any subfolders so os.remove will do just fine)
                     for filename in os.listdir("accelerate-disk-cache"):
-                        try:
+                        with contextlib.suppress(OSError):
                             os.remove(os.path.join("accelerate-disk-cache", filename))
-                        except OSError:
-                            pass
                 os.makedirs("accelerate-disk-cache", exist_ok=True)
                 if utils.num_shards is not None:
                     num_tensors = len(utils.get_sharded_checkpoint_num_tensors(utils.from_pretrained_model_name, utils.from_pretrained_index_filename, **utils.from_pretrained_kwargs))
@@ -947,7 +955,7 @@ class TrainerBase(abc.ABC):
                     f,
                 )
             self.save_data()
-        
+
         bar1 = tqdm(initial=step + 1, total=steps, desc="CURRENT TRAINING STEP")
 
         while step < steps:

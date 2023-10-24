@@ -148,7 +148,7 @@ class _EmptyState(NamedTuple):
     pass
 
 class _DummyOptimizer:
-    def init(*args, **kwargs):
+    def init(self, **kwargs):
         return _EmptyState()
 
 
@@ -594,9 +594,13 @@ class PenalizingCausalTransformer(CausalTransformer):
                     # Add that information to generate_loop_fn's starting state
                     initial_state = (generated, generated_index, sequence_index) + initial_state
                     return sequence_index+1, initial_state
+
                 _, initial_states = jax.lax.scan(generate_initial_scan_fn, 0, None, numseqs)
                 sample_key = initial_states[-1][0]
-                initial_states = list(jax.tree_map(lambda x: x[i], initial_states[:-1]) for i in range(numseqs))
+                initial_states = [
+                    jax.tree_map(lambda x: x[i], initial_states[:-1])
+                    for i in range(numseqs)
+                ]
                 # Get repetition penalty from the arguments
                 repetition_penalty = sampler_options.pop('repetition_penalty', None)
                 rpslope = sampler_options.pop('rpslope', None)
@@ -650,12 +654,15 @@ class PenalizingCausalTransformer(CausalTransformer):
                     carry[0][0] = (generated, generated_index, sequence_index, next_token[jnp.newaxis], new_state)
                     carry[0].append(carry[0].pop(0))
                     return carry[0], new_key
+
                 return jax.lax.while_loop(
                     lambda carry: carry[0][0][1] - config["seq"] < gen_length,
                     generate_loop_fn,
                     (initial_states, sample_key),
                 )
+
             return generate_sample.apply(state["params"], key, ctx, ctx_length)
+
         self.generate_static_xmap = jax.experimental.maps.xmap(
             fun=generate_static,
             in_axes=(
@@ -684,11 +691,17 @@ class PenalizingCausalTransformer(CausalTransformer):
                     # Add that information to generate_loop_fn's starting state
                     initial_state = (jnp.empty(config["n_vocab"], dtype=jnp.float32), generated_index, sequence_index) + initial_state
                     return sequence_index+1, initial_state
+
                 _, initial_states = jax.lax.scan(generate_initial_scan_fn, 0, context, numseqs)
                 sample_key = initial_states[-1][0]
-                initial_states = list(list(jax.tree_map(lambda x: x[i], initial_states[:-1])) for i in range(numseqs))
+                initial_states = [
+                    list(jax.tree_map(lambda x: x[i], initial_states[:-1]))
+                    for i in range(numseqs)
+                ]
                 return initial_states, sample_key
+
             return generate_initial_inner.apply(state["params"], key, ctx, ctx_length)
+
         self.generate_initial_xmap = jax.experimental.maps.xmap(
             fun=generate_initial,
             in_axes=(
@@ -739,6 +752,7 @@ class PenalizingCausalTransformer(CausalTransformer):
                     (data,),
                 )
             return generate_once_inner.apply(state["params"])
+
         self.generate_once_xmap = jax.experimental.maps.xmap(
             fun=generate_once,
             in_axes=(
@@ -792,12 +806,11 @@ class PenalizingCausalTransformer(CausalTransformer):
             n_generated += 1
             for i in range(numseqs):
                 generate_data[i][3] = np.tile(sample_data[i][0][sample_data[i][1]-1][np.newaxis, np.newaxis], (params["cores_per_replica"], 1, 1))
-            if use_callback:
-                generated = np.uint32(tuple(d[0] for d in sample_data))
-                excluded_world_info, regeneration_required, halt = stopping_callback(generated, n_generated, excluded_world_info)
-                if regeneration_required or halt:
-                    break
-            else:
+            if not use_callback:
+                break
+            generated = np.uint32(tuple(d[0] for d in sample_data))
+            excluded_world_info, regeneration_required, halt = stopping_callback(generated, n_generated, excluded_world_info)
+            if regeneration_required or halt:
                 break
         stopped_compiling_callback()
         return sample_data, n_generated, regeneration_required, halt
@@ -840,7 +853,6 @@ def infer_dynamic(
     pad_amount = seq - provided_ctx
     padded_tokens = np.pad(tokens, ((0, 0), (pad_amount, 0)), constant_values=pad_token_id)
     batched_tokens = np.array([padded_tokens] * total_batch)
-    samples = []
     output = network.generate_dynamic(
         batched_tokens,
         np.ones(total_batch, dtype=np.uint32) * provided_ctx,
@@ -850,8 +862,9 @@ def infer_dynamic(
         excluded_world_info=excluded_world_info,
         use_callback=use_callback,
     )
-    for out in output[0]:
-        samples.append(out[0][params["seq"] : params["seq"] + gen_len])
+    samples = [
+        out[0][params["seq"] : params["seq"] + gen_len] for out in output[0]
+    ]
     return (samples,) + output[1:]
 
 def infer_static(
@@ -886,7 +899,6 @@ def infer_static(
     pad_amount = seq - provided_ctx
     padded_tokens = np.pad(tokens, ((pad_amount, 0),), constant_values=pad_token_id)
     batched_tokens = np.array([padded_tokens] * total_batch)
-    samples = []
     batched_generator_params = {
         "sampler_order": np.repeat(sampler_order[np.newaxis], total_batch, axis=0),
         "temp": temp * np.ones(total_batch),
@@ -907,16 +919,14 @@ def infer_static(
         batched_generator_params,
         soft_embeddings=soft_embeddings,
     )[0]
-    for o in output:
-        samples.append(o[0][0, 0, params["seq"] : params["seq"] + gen_len])
-    return samples
+    return [o[0][0, 0, params["seq"] : params["seq"] + gen_len] for o in output]
 
 
 def reshard_reverse(x, total_shards, old_shape):
     assert len(x.shape) != 1
     if len(x.shape) == 2:
         if old_shape[1] == x.shape[1]:
-            out = x[0:1].tile((total_shards, 1))
+            out = x[:1].tile((total_shards, 1))
         else:
             out = x.reshape(old_shape)
     elif len(x.shape) == 3:
@@ -942,11 +952,10 @@ def get_old_shape(t, total_shards, dim=2):
             return (shard_shape[0], shard_shape[1] // total_shards)
         else:
             raise ValueError(f"Unsupported dim {dim}")
-    if len(t.shape) == 1:
-        assert t.shape[0] % total_shards == 0
-        return (t.shape[0] // total_shards,)
-    else:
+    if len(t.shape) != 1:
         raise ValueError(f"Unsupported shape {t.shape}")
+    assert t.shape[0] % total_shards == 0
+    return (t.shape[0] // total_shards,)
 
 
 def read_neox_checkpoint(state, path, config, checkpoint_shards=2):
@@ -998,8 +1007,15 @@ def read_neox_checkpoint(state, path, config, checkpoint_shards=2):
         layer = checkpoint_layer - 2
         shards = []
         with torch_lazy_loader.use_custom_unpickler(torch_lazy_loader.RestrictedUnpickler):
-            for checkpoint_shard in range(checkpoint_shards):
-                shards.append(torch.load(path_template.format(layer=checkpoint_layer, shard=checkpoint_shard), map_location="cpu"))
+            shards.extend(
+                torch.load(
+                    path_template.format(
+                        layer=checkpoint_layer, shard=checkpoint_shard
+                    ),
+                    map_location="cpu",
+                )
+                for checkpoint_shard in range(checkpoint_shards)
+            )
         for key in shards[0]:
             if key == "attention.rotary_emb.inv_freq":
                 continue
